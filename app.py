@@ -24,7 +24,7 @@ def search_jobs(query, location="Bangalore", results=10):
 # --- UI starts here ---
 st.set_page_config(page_title="Job Search AI Agent", page_icon="🔍")
 st.title("🔍 Job Search AI Agent")
-st.write("Find jobs across India, powered by Adzuna.")
+st.write("Find jobs across India.")
 
 col1, col2 = st.columns(2)
 with col1:
