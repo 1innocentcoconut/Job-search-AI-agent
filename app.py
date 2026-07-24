@@ -2,11 +2,24 @@ import os
 import streamlit as st
 import requests
 from dotenv import load_dotenv
-
+from pypdf import PdfReader
 load_dotenv()
 
 APP_ID = os.getenv("ADZUNA_APP_ID")
 APP_KEY = os.getenv("ADZUNA_APP_KEY")
+
+#pdf upload 
+uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf")
+
+if uploaded_file is not None:
+    reader = PdfReader(uploaded_file)
+    resume_text = ""
+    for page in reader.pages:
+        resume_text += page.extract_text() or ""
+    
+    st.success(f"Resume parsed — {len(resume_text)} characters extracted")
+    with st.expander("Preview extracted text"):
+        st.text(resume_text[:1000])
 
 def search_jobs(query, location="Bangalore", results=10):
     url = "https://api.adzuna.com/v1/api/jobs/in/search/1"
