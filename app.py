@@ -3,24 +3,19 @@ import streamlit as st
 import requests
 from dotenv import load_dotenv
 from pypdf import PdfReader
-load_dotenv()
+from google import genai
 
+load_dotenv()
 APP_ID = os.getenv("ADZUNA_APP_ID")
 APP_KEY = os.getenv("ADZUNA_APP_KEY")
+#genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+# --- Session state init ---
+if "job_description" not in st.session_state:
+    st.session_state.job_description = ""
 
-#pdf upload 
-uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf")
 
-if uploaded_file is not None:
-    reader = PdfReader(uploaded_file)
-    resume_text = ""
-    for page in reader.pages:
-        resume_text += page.extract_text() or ""
-    
-    st.success(f"Resume parsed — {len(resume_text)} characters extracted")
-    with st.expander("Preview extracted text"):
-        st.text(resume_text[:1000])
-
+# --- Functions ---
 def search_jobs(query, location="Bangalore", results=10):
     url = "https://api.adzuna.com/v1/api/jobs/in/search/1"
     params = {
@@ -34,11 +29,50 @@ def search_jobs(query, location="Bangalore", results=10):
     response.raise_for_status()
     return response.json()["results"]
 
+
+def analyze_resume_match(resume_text, job_description):
+    prompt = f"""You are a career advisor. Compare this resume against this job description.
+
+RESUME:
+{resume_text}
+
+JOB DESCRIPTION:
+{job_description}
+
+Provide:
+1. A match score out of 100
+2. Top 3 matching strengths
+3. Top 3 gaps or missing keywords
+4. One specific suggestion to improve the resume for this role
+
+Keep it concise."""
+
+    response = client.models.generate_content(
+        model="gemini-3.5-flash",
+        contents=prompt,
+    )
+    return response.text
+
 # --- UI starts here ---
 st.set_page_config(page_title="Job Search AI Agent", page_icon="🔍")
 st.title("🔍 Job Search AI Agent")
 st.write("Find jobs across India.")
 
+# --- Resume Upload ---
+st.header("1. Upload Your Resume")
+resume_text = ""
+uploaded_file = st.file_uploader("Upload your resume (PDF)", type="pdf")
+if uploaded_file is not None:
+    reader = PdfReader(uploaded_file)
+    for page in reader.pages:
+        resume_text += page.extract_text() or ""
+
+    st.success(f"Resume parsed — {len(resume_text)} characters extracted")
+    with st.expander("Preview extracted text"):
+        st.text(resume_text[:1000])
+
+# --- Job Search ---
+st.header("2. Search for Jobs")
 col1, col2 = st.columns(2)
 with col1:
     query = st.text_input("What job are you looking for?", "Python Developer")
@@ -64,5 +98,29 @@ if st.button("Search Jobs"):
                             st.write(f"**Salary:** ₹{salary_min:,.0f} - ₹{salary_max:,.0f}")
                         st.write(job["description"][:300] + "...")
                         st.link_button("View Job", job["redirect_url"])
+                        if st.button("Use this job for resume match", key=job["id"]):
+                            st.session_state.job_description = job["description"]
+                            st.success("Loaded below — scroll down to Resume Match section")
         except Exception as e:
             st.error(f"Something went wrong: {e}")
+
+# --- Job Description Input ---
+st.header("3. Job Description")
+job_description = st.text_area(
+    "Paste a job description, or click 'Use this job' above to auto-fill",
+    value=st.session_state.job_description,
+    height=200,
+    key="jd_textarea",
+)
+
+# --- Resume Match Analysis ---
+st.header("4. Resume Match Analysis")
+if st.button("Analyze Match"):
+    if not resume_text:
+        st.warning("Upload a resume first")
+    elif not job_description:
+        st.warning("Add a job description first (paste or select a job above)")
+    else:
+        with st.spinner("Analyzing..."):
+            result = analyze_resume_match(resume_text, job_description)
+        st.markdown(result)
