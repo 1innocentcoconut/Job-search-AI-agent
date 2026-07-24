@@ -3,13 +3,15 @@ import streamlit as st
 import requests
 from dotenv import load_dotenv
 from pypdf import PdfReader
-from google import genai
+from groq import Groq
+
 
 load_dotenv()
 APP_ID = os.getenv("ADZUNA_APP_ID")
 APP_KEY = os.getenv("ADZUNA_APP_KEY")
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 #genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+#client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # --- Session state init ---
 if "job_description" not in st.session_state:
     st.session_state.job_description = ""
@@ -47,13 +49,17 @@ Provide:
 
 Keep it concise."""
 
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=prompt,
-    )
-    return response.text
+    try:
+        response = client.chat.completions.create(
+            model="openai/gpt-oss-20b",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"⚠️ Analysis failed: {e}\n\nTry again in a moment."
 
-# --- UI starts here ---
+
+    # --- UI starts here ---
 st.set_page_config(page_title="Job Search AI Agent", page_icon="🔍")
 st.title("🔍 Job Search AI Agent")
 st.write("Find jobs across India.")
