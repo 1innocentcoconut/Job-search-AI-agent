@@ -4,6 +4,9 @@ import requests
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from groq import Groq
+from langchain_core.tools import tool
+from langchain_groq import ChatGroq
+from langchain.agents import create_agent
 
 
 load_dotenv()
@@ -57,6 +60,58 @@ Keep it concise."""
         return response.choices[0].message.content
     except Exception as e:
         return f"⚠️ Analysis failed: {e}\n\nTry again in a moment."
+
+
+# --- LangChain tools (thin wrappers around the functions above) ---
+# These don't change search_jobs / analyze_resume_match at all — they just
+# give an LLM agent a name + description so it can decide which one to call.
+
+@tool
+def job_search_tool(query: str, location: str = "Bangalore") -> str:
+    """Search for job listings in India on Adzuna, given a job title/role
+    (e.g. 'Python Developer') and a location (e.g. 'Bangalore'). Returns a
+    short list of matching job titles, companies, and locations."""
+    try:
+        jobs = search_jobs(query, location)
+    except Exception as e:
+        return f"Job search failed: {e}"
+    if not jobs:
+        return "No jobs found for that search."
+    lines = []
+    for job in jobs[:10]:
+        title = job.get("title", "N/A")
+        company = job.get("company", {}).get("display_name", "N/A")
+        loc = job.get("location", {}).get("display_name", "N/A")
+        lines.append(f"- {title} at {company} ({loc})")
+    return "\n".join(lines)
+
+
+@tool
+def resume_match_tool(resume_text: str, job_description: str) -> str:
+    """Compare a candidate's resume text against a job description and
+    return a match score out of 100, top matching strengths, gaps, and one
+    improvement suggestion. Requires both the full resume text and the full
+    job description text as input."""
+    return analyze_resume_match(resume_text, job_description)
+
+
+def build_agent_executor():
+    """Builds a LangChain agent that owns both tools and decides which
+    one(s) to call based on the user's natural-language request.
+    Uses langchain 1.x's create_agent (the current API — the older
+    create_tool_calling_agent + AgentExecutor pattern from 0.x LangChain
+    was removed)."""
+    agent_llm = ChatGroq(model="openai/gpt-oss-20b", api_key=os.getenv("GROQ_API_KEY"))
+    tools = [job_search_tool, resume_match_tool]
+    system_prompt = (
+        "You are a job search assistant for the Indian job market. "
+        "You have two tools: one to search job listings, and one to "
+        "compare a resume against a job description. Use whichever "
+        "tool(s) fit the user's request. If the user's message includes "
+        "resume text and/or a job description, pass that full text through "
+        "to resume_match_tool rather than summarizing it yourself."
+    )
+    return create_agent(agent_llm, tools, system_prompt=system_prompt)
 
 
     # --- UI starts here ---
@@ -130,3 +185,43 @@ if st.button("Analyze Match"):
         with st.spinner("Analyzing..."):
             result = analyze_resume_match(resume_text, job_description)
         st.markdown(result)
+
+# --- AI Agent (LangChain) ---
+st.header("5. Ask the AI Agent")
+st.caption(
+    "Ask in plain English — e.g. \"find backend developer jobs in Pune\" or "
+    "\"how well does my resume match this role\". The agent decides on its "
+    "own whether to search jobs, analyze your resume, or both."
+)
+
+if "agent_executor" not in st.session_state:
+    st.session_state.agent_executor = build_agent_executor()
+
+agent_query = st.text_area(
+    "Your request",
+    placeholder="e.g. Find me data analyst jobs in Hyderabad",
+    key="agent_query_box",
+)
+
+if st.button("Ask Agent"):
+    if not agent_query:
+        st.warning("Type a request first")
+    else:
+        # Pass along whatever context is already loaded on the page, so the
+        # agent can use resume_match_tool without the user retyping anything.
+        context_parts = [agent_query]
+        if resume_text:
+            context_parts.append(f"My resume text:\n{resume_text}")
+        if job_description:
+            context_parts.append(f"Job description in context:\n{job_description}")
+        full_input = "\n\n".join(context_parts)
+
+        with st.spinner("Agent is thinking..."):
+            try:
+                result = st.session_state.agent_executor.invoke(
+                    {"messages": [{"role": "user", "content": full_input}]}
+                )
+                final_message = result["messages"][-1].content
+                st.markdown(final_message)
+            except Exception as e:
+                st.error(f"Agent failed: {e}")
