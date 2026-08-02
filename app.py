@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import requests
+from ats_scoring import calculate_ats_score, make_ats_score_tool
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from groq import Groq
@@ -96,20 +97,27 @@ def resume_match_tool(resume_text: str, job_description: str) -> str:
 
 
 def build_agent_executor():
-    """Builds a LangChain agent that owns both tools and decides which
+    """Builds a LangChain agent that owns all tools and decides which
     one(s) to call based on the user's natural-language request.
     Uses langchain 1.x's create_agent (the current API — the older
     create_tool_calling_agent + AgentExecutor pattern from 0.x LangChain
     was removed)."""
     agent_llm = ChatGroq(model="openai/gpt-oss-20b", api_key=os.getenv("GROQ_API_KEY"))
-    tools = [job_search_tool, resume_match_tool]
+
+    # ATS scoring tool — built via the factory so it can close over `client`
+    # (the same Groq client used everywhere else in this file), same pattern
+    # as how resume_match_tool reuses analyze_resume_match/client above.
+    ats_score_tool = make_ats_score_tool(client)
+
+    tools = [job_search_tool, resume_match_tool, ats_score_tool]
     system_prompt = (
         "You are a job search assistant for the Indian job market. "
-        "You have two tools: one to search job listings, and one to "
-        "compare a resume against a job description. Use whichever "
-        "tool(s) fit the user's request. If the user's message includes "
+        "You have three tools: one to search job listings, one to "
+        "compare a resume against a job description, and one to calculate "
+        "an ATS compatibility score for a resume against a job description. "
+        "Use whichever tool(s) fit the user's request. If the user's message includes "
         "resume text and/or a job description, pass that full text through "
-        "to resume_match_tool rather than summarizing it yourself."
+        "to resume_match_tool or ats_score_tool rather than summarizing it yourself."
     )
     return create_agent(agent_llm, tools, system_prompt=system_prompt)
 
@@ -191,7 +199,8 @@ st.header("5. Ask the AI Agent")
 st.caption(
     "Ask in plain English — e.g. \"find backend developer jobs in Pune\" or "
     "\"how well does my resume match this role\". The agent decides on its "
-    "own whether to search jobs, analyze your resume, or both."
+    "own whether to search jobs, analyze your resume, check your ATS score, or "
+    "any combination of these."
 )
 
 if "agent_executor" not in st.session_state:
@@ -208,7 +217,8 @@ if st.button("Ask Agent"):
         st.warning("Type a request first")
     else:
         # Pass along whatever context is already loaded on the page, so the
-        # agent can use resume_match_tool without the user retyping anything.
+        # agent can use resume_match_tool / ats_score_tool without the user
+        # retyping anything.
         context_parts = [agent_query]
         if resume_text:
             context_parts.append(f"My resume text:\n{resume_text}")
@@ -225,3 +235,46 @@ if st.button("Ask Agent"):
                 st.markdown(final_message)
             except Exception as e:
                 st.error(f"Agent failed: {e}")
+
+# --- ATS Score ---
+st.header("6. ATS Score")
+st.markdown(
+    "Get an ATS compatibility score for your resume against a specific job "
+    "description — covers keyword matching and format checks that real "
+    "applicant tracking systems look for."
+)
+
+if st.button("Calculate ATS Score"):
+    if not resume_text:
+        st.warning("Upload a resume first")
+    elif not job_description:
+        st.warning("Add a job description first (paste or select a job above)")
+    else:
+        with st.spinner("Scoring resume against job description..."):
+            try:
+                result = calculate_ats_score(resume_text, job_description, client)
+
+                st.metric("ATS Score", f"{result['total_score']}/100")
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("Keyword Match")
+                    st.progress(result["keyword_score"] / result["keyword_max"])
+                    st.caption(f"{result['keyword_score']}/{result['keyword_max']} points")
+                    if result["matched_keywords"]:
+                        st.success("Matched: " + ", ".join(result["matched_keywords"]))
+                    if result["missing_keywords"]:
+                        st.error("Missing: " + ", ".join(result["missing_keywords"]))
+
+                with col2:
+                    st.subheader("Format Check")
+                    st.progress(result["format_score"] / result["format_max"])
+                    st.caption(f"{result['format_score']}/{result['format_max']} points")
+                    if result["format_issues"]:
+                        for issue in result["format_issues"]:
+                            st.warning(issue)
+                    else:
+                        st.success("No format issues detected")
+
+            except Exception as e:
+                st.error(f"Could not calculate ATS score: {e}")
