@@ -2,12 +2,15 @@ import os
 import streamlit as st
 import requests
 from ats_scoring import calculate_ats_score, make_ats_score_tool
+from keyword_optimizer import generate_keyword_suggestions, make_keyword_optimizer_tool
 from dotenv import load_dotenv
 from pypdf import PdfReader
 from groq import Groq
 from langchain_core.tools import tool
 from langchain_groq import ChatGroq
 from langchain.agents import create_agent
+
+import keyword_optimizer
 
 
 load_dotenv()
@@ -108,8 +111,9 @@ def build_agent_executor():
     # (the same Groq client used everywhere else in this file), same pattern
     # as how resume_match_tool reuses analyze_resume_match/client above.
     ats_score_tool = make_ats_score_tool(client)
+    keyword_optimizer_tool = make_keyword_optimizer_tool(client)
 
-    tools = [job_search_tool, resume_match_tool, ats_score_tool]
+    tools = [job_search_tool, resume_match_tool, ats_score_tool,keyword_optimizer_tool]
     system_prompt = (
         "You are a job search assistant for the Indian job market. "
         "You have three tools: one to search job listings, one to "
@@ -253,6 +257,7 @@ if st.button("Calculate ATS Score"):
         with st.spinner("Scoring resume against job description..."):
             try:
                 result = calculate_ats_score(resume_text, job_description, client)
+                st.session_state.ats_result = result
 
                 st.metric("ATS Score", f"{result['total_score']}/100")
 
@@ -278,3 +283,33 @@ if st.button("Calculate ATS Score"):
 
             except Exception as e:
                 st.error(f"Could not calculate ATS score: {e}")
+
+# --- Keyword Optimization Suggestions ---
+st.header("7. Keyword Optimization Suggestions")
+st.markdown(
+    "Get concrete suggestions for where and how to add the keywords your "
+    "resume is missing, based on your last ATS score run above."
+)
+
+if st.button("Get Optimization Suggestions"):
+    ats_result = st.session_state.get("ats_result")
+    if not ats_result:
+        st.warning("Run 'Calculate ATS Score' above first")
+    elif not ats_result["missing_keywords"]:
+        st.success("No missing keywords — nothing to optimize!")
+    else:
+        with st.spinner("Generating suggestions..."):
+            try:
+                suggestions_result = generate_keyword_suggestions(
+                    resume_text, job_description, ats_result["missing_keywords"], client
+                )
+                suggestions = suggestions_result.get("suggestions", [])
+                if not suggestions:
+                    st.warning(suggestions_result.get("error", "No suggestions generated — try again"))
+                else:
+                    for s in suggestions:
+                        with st.container(border=True):
+                            st.write(f"**{s.get('keyword')}** → add to *{s.get('section')}*")
+                            st.caption(s.get("example_bullet"))
+            except Exception as e:
+                st.error(f"Could not generate suggestions: {e}")
