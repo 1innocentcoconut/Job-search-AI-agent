@@ -2,6 +2,7 @@ import os
 import streamlit as st
 import requests
 from ats_scoring import calculate_ats_score, make_ats_score_tool
+from company_lookup import get_company_info, make_company_lookup_tool
 from keyword_optimizer import generate_keyword_suggestions, make_keyword_optimizer_tool
 from dotenv import load_dotenv
 from pypdf import PdfReader
@@ -111,13 +112,16 @@ def build_agent_executor():
     # (the same Groq client used everywhere else in this file), same pattern
     # as how resume_match_tool reuses analyze_resume_match/client above.
     ats_score_tool = make_ats_score_tool(client)
+    company_lookup_tool = make_company_lookup_tool()
     keyword_optimizer_tool = make_keyword_optimizer_tool(client)
-
+    tools = [job_search_tool, resume_match_tool, ats_score_tool, keyword_optimizer_tool, company_lookup_tool]
+    
     tools = [job_search_tool, resume_match_tool, ats_score_tool,keyword_optimizer_tool]
     system_prompt = (
         "You are a job search assistant for the Indian job market. "
-        "You have three tools: one to search job listings, one to "
+        "You have Five tools: one to search job listings, one to "
         "compare a resume against a job description, and one to calculate "
+        "and one to look up public information about a company. "
         "an ATS compatibility score for a resume against a job description. "
         "Use whichever tool(s) fit the user's request. If the user's message includes "
         "resume text and/or a job description, pass that full text through "
@@ -313,3 +317,24 @@ if st.button("Get Optimization Suggestions"):
                             st.caption(s.get("example_bullet"))
             except Exception as e:
                 st.error(f"Could not generate suggestions: {e}")
+
+# --- Company Lookup ---
+st.header("8. Company Research")
+st.markdown("Look up basic public info about a company you found in a job listing.")
+
+company_name = st.text_input("Company name", key="company_name_input")
+if st.button("Look Up Company"):
+    if not company_name:
+        st.warning("Enter a company name first")
+    else:
+        with st.spinner("Looking up company..."):
+            result = get_company_info(company_name)
+        if not result["found"]:
+            st.warning(result["reason"])
+        else:
+            if result["thumbnail"]:
+                st.image(result["thumbnail"], width=120)
+            st.subheader(result["title"])
+            st.write(result["extract"])
+            if result["url"]:
+                st.link_button("Read more on Wikipedia", result["url"])
