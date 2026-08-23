@@ -1,6 +1,7 @@
 import os
 import streamlit as st
 import requests
+from database import init_db, save_job, get_saved_jobs, update_job_status, delete_job, make_tracked_jobs_tool
 from ats_scoring import calculate_ats_score, make_ats_score_tool
 from company_lookup import get_company_info, make_company_lookup_tool
 from keyword_optimizer import generate_keyword_suggestions, make_keyword_optimizer_tool
@@ -18,6 +19,7 @@ load_dotenv()
 APP_ID = os.getenv("ADZUNA_APP_ID")
 APP_KEY = os.getenv("ADZUNA_APP_KEY")
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+init_db()
 #genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 #client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 # --- Session state init ---
@@ -178,6 +180,15 @@ if st.button("Search Jobs"):
                         if st.button("Use this job for resume match", key=job["id"]):
                             st.session_state.job_description = job["description"]
                             st.success("Loaded below — scroll down to Resume Match section")
+                        if st.button("💾 Save this job", key=f"save_{job['id']}"):
+                            save_job({
+                                "title": job.get("title", "N/A"),
+                                "company": job.get("company", {}).get("display_name", "N/A"),
+                                "location": job.get("location", {}).get("display_name", "N/A"),
+                                "salary": f"₹{salary_min:,.0f} - ₹{salary_max:,.0f}" if salary_min and salary_max else "N/A",
+                                "link": job.get("redirect_url", ""),
+                            })
+                            st.success("Saved to your tracked applications ✅")
         except Exception as e:
             st.error(f"Something went wrong: {e}")
 
@@ -338,3 +349,37 @@ if st.button("Look Up Company"):
             st.write(result["extract"])
             if result["url"]:
                 st.link_button("Read more on Wikipedia", result["url"])
+
+
+# --- Tracked Applications ---
+st.header("9. Tracked Applications")
+st.markdown("Jobs you've saved above, with status tracking.")
+
+tracked_jobs = get_saved_jobs()
+if not tracked_jobs:
+    st.info("No saved jobs yet — click 'Save this job' in Section 2 to start tracking.")
+else:
+    status_options = ["interested", "applied", "interview", "offer", "rejected"]
+    for j in tracked_jobs:
+        with st.container(border=True):
+            st.subheader(j["title"])
+            st.write(f"**Company:** {j['company']}")
+            st.write(f"**Location:** {j['location']}")
+            st.write(f"**Salary:** {j['salary']}")
+            if j["link"]:
+                st.link_button("View Job", j["link"])
+
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                new_status = st.selectbox(
+                    "Status", status_options,
+                    index=status_options.index(j["status"]) if j["status"] in status_options else 0,
+                    key=f"status_{j['id']}",
+                )
+                if new_status != j["status"]:
+                    update_job_status(j["id"], new_status)
+                    st.rerun()
+            with col2:
+                if st.button("🗑️ Remove", key=f"delete_{j['id']}"):
+                    delete_job(j["id"])
+                    st.rerun()
