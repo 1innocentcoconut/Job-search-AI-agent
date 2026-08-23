@@ -25,7 +25,8 @@ init_db()
 # --- Session state init ---
 if "job_description" not in st.session_state:
     st.session_state.job_description = ""
-
+if "job_results" not in st.session_state:
+    st.session_state.job_results = []
 
 # --- Functions ---
 def search_jobs(query, location="Bangalore", results=10):
@@ -118,7 +119,7 @@ def build_agent_executor():
     keyword_optimizer_tool = make_keyword_optimizer_tool(client)
     tools = [job_search_tool, resume_match_tool, ats_score_tool, keyword_optimizer_tool, company_lookup_tool]
     
-    tools = [job_search_tool, resume_match_tool, ats_score_tool,keyword_optimizer_tool]
+    
     system_prompt = (
         "You are a job search assistant for the Indian job market. "
         "You have Five tools: one to search job listings, one to "
@@ -161,37 +162,39 @@ with col2:
 if st.button("Search Jobs"):
     with st.spinner("Searching..."):
         try:
-            jobs = search_jobs(query, location)
-            if not jobs:
-                st.warning("No jobs found. Try a different search.")
-            else:
-                st.success(f"Found {len(jobs)} jobs")
-                for job in jobs:
-                    with st.container(border=True):
-                        st.subheader(job["title"])
-                        st.write(f"**Company:** {job.get('company', {}).get('display_name', 'N/A')}")
-                        st.write(f"**Location:** {job.get('location', {}).get('display_name', 'N/A')}")
-                        salary_min = job.get("salary_min")
-                        salary_max = job.get("salary_max")
-                        if salary_min and salary_max:
-                            st.write(f"**Salary:** ₹{salary_min:,.0f} - ₹{salary_max:,.0f}")
-                        st.write(job["description"][:300] + "...")
-                        st.link_button("View Job", job["redirect_url"])
-                        if st.button("Use this job for resume match", key=job["id"]):
-                            st.session_state.job_description = job["description"]
-                            st.success("Loaded below — scroll down to Resume Match section")
-                        if st.button("💾 Save this job", key=f"save_{job['id']}"):
-                            save_job({
-                                "title": job.get("title", "N/A"),
-                                "company": job.get("company", {}).get("display_name", "N/A"),
-                                "location": job.get("location", {}).get("display_name", "N/A"),
-                                "salary": f"₹{salary_min:,.0f} - ₹{salary_max:,.0f}" if salary_min and salary_max else "N/A",
-                                "link": job.get("redirect_url", ""),
-                            })
-                            st.success("Saved to your tracked applications ✅")
+            st.session_state.job_results = search_jobs(query, location)
         except Exception as e:
             st.error(f"Something went wrong: {e}")
+            st.session_state.job_results = []
 
+if not st.session_state.job_results:
+    st.info("No jobs found. Try a different search.") if st.session_state.get("job_results") == [] else None
+else:
+    jobs = st.session_state.job_results
+    st.success(f"Found {len(jobs)} jobs")
+    for job in jobs:
+        with st.container(border=True):
+            st.subheader(job["title"])
+            st.write(f"**Company:** {job.get('company', {}).get('display_name', 'N/A')}")
+            st.write(f"**Location:** {job.get('location', {}).get('display_name', 'N/A')}")
+            salary_min = job.get("salary_min")
+            salary_max = job.get("salary_max")
+            if salary_min and salary_max:
+                st.write(f"**Salary:** ₹{salary_min:,.0f} - ₹{salary_max:,.0f}")
+            st.write(job["description"][:300] + "...")
+            st.link_button("View Job", job["redirect_url"])
+            if st.button("Use this job for resume match", key=job["id"]):
+                st.session_state.job_description = job["description"]
+                st.success("Loaded below — scroll down to Resume Match section")
+            if st.button("💾 Save this job", key=f"save_{job['id']}"):
+                save_job({
+                    "title": job.get("title", "N/A"),
+                    "company": job.get("company", {}).get("display_name", "N/A"),
+                    "location": job.get("location", {}).get("display_name", "N/A"),
+                    "salary": f"₹{salary_min:,.0f} - ₹{salary_max:,.0f}" if salary_min and salary_max else "N/A",
+                    "link": job.get("redirect_url", ""),
+                })
+                st.success("Saved to your tracked applications ✅")
 # --- Job Description Input ---
 st.header("3. Job Description")
 job_description = st.text_area(
