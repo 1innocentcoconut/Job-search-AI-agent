@@ -129,7 +129,7 @@ def build_agent_executor():
         "Use whichever tool(s) fit the user's request. If the user's message includes "
         "resume text and/or a job description, pass that full text through "
         "to resume_match_tool or ats_score_tool rather than summarizing it yourself."
-    )
+    )    
     return create_agent(agent_llm, tools, system_prompt=system_prompt)
 
 
@@ -167,9 +167,7 @@ if st.button("Search Jobs"):
             st.error(f"Something went wrong: {e}")
             st.session_state.job_results = []
 
-if not st.session_state.job_results:
-    st.info("No jobs found. Try a different search.") if st.session_state.get("job_results") == [] else None
-else:
+if st.session_state.job_results:
     jobs = st.session_state.job_results
     st.success(f"Found {len(jobs)} jobs")
     for job in jobs:
@@ -195,6 +193,7 @@ else:
                     "link": job.get("redirect_url", ""),
                 })
                 st.success("Saved to your tracked applications ✅")
+
 # --- Job Description Input ---
 st.header("3. Job Description")
 job_description = st.text_area(
