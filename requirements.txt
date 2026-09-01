@@ -1,6 +1,8 @@
-streamlit
-langchain
-langchain-google-genai
-requests
-python-dotenv
-pypd
+streamlit==1.59.2
+requests==2.34.2
+python-dotenv==1.2.2
+pypdf==6.14.2
+groq==0.37.1
+langchain==1.3.14
+langchain-core==1.4.9
+langchain-groq==1.1.3
