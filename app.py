@@ -16,9 +16,12 @@ import keyword_optimizer
 
 
 load_dotenv()
-APP_ID = os.getenv("ADZUNA_APP_ID")
-APP_KEY = os.getenv("ADZUNA_APP_KEY")
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+def get_secret(key):
+    return os.getenv(key) or st.secrets.get(key)
+APP_ID = get_secret("ADZUNA_APP_ID")
+APP_KEY = get_secret("ADZUNA_APP_KEY")
+client = Groq(api_key=get_secret("GROQ_API_KEY"))
 init_db()
 #genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 #client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
@@ -109,7 +112,7 @@ def build_agent_executor():
     Uses langchain 1.x's create_agent (the current API — the older
     create_tool_calling_agent + AgentExecutor pattern from 0.x LangChain
     was removed)."""
-    agent_llm = ChatGroq(model="openai/gpt-oss-20b", api_key=os.getenv("GROQ_API_KEY"))
+    agent_llm = ChatGroq(model="openai/gpt-oss-20b", api_key=get_secret("GROQ_API_KEY"))
 
     # ATS scoring tool — built via the factory so it can close over `client`
     # (the same Groq client used everywhere else in this file), same pattern
