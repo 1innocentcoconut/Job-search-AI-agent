@@ -120,15 +120,18 @@ def build_agent_executor():
     ats_score_tool = make_ats_score_tool(client)
     company_lookup_tool = make_company_lookup_tool()
     keyword_optimizer_tool = make_keyword_optimizer_tool(client)
-    tools = [job_search_tool, resume_match_tool, ats_score_tool, keyword_optimizer_tool, company_lookup_tool]
+    tracked_jobs_tool = make_tracked_jobs_tool()
+    tools = [job_search_tool, resume_match_tool, ats_score_tool, keyword_optimizer_tool, company_lookup_tool, tracked_jobs_tool]
     
     
     system_prompt = (
         "You are a job search assistant for the Indian job market. "
-        "You have Five tools: one to search job listings, one to "
-        "compare a resume against a job description, and one to calculate "
-        "and one to look up public information about a company. "
-        "an ATS compatibility score for a resume against a job description. "
+        "You have six tools: one to search job listings, one to "
+        "compare a resume against a job description, one to calculate "
+        "an ATS compatibility score for a resume against a job description, "
+        "one to suggest keyword optimizations, one to look up public "
+        "information about a company, and one to look up jobs the user has "
+        "already saved or tracked. "
         "Use whichever tool(s) fit the user's request. If the user's message includes "
         "resume text and/or a job description, pass that full text through "
         "to resume_match_tool or ats_score_tool rather than summarizing it yourself."
